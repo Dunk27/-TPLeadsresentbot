@@ -1,12 +1,12 @@
 """
 Telegram-бот ФРАУ_КУХНИ
-Версия для Render.com + Python 3.14
-python-telegram-bot v21
+Render.com + Python 3.14 + python-telegram-bot v21
 """
 import logging
 import sqlite3
 import re
 import os
+import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ─── Health check (Render требует открытый порт) ──────────────────────────────
+# ─── Health check ─────────────────────────────────────────────────────────────
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -93,23 +93,15 @@ def find_client(phone, username, db_file=DB_FILE):
 def extract_client_data(message_text):
     if not message_text:
         return None, None, None, None, []
-
     tags = re.findall(r"#[\w\u0400-\u04FF]+", message_text)
-
     phone_m = re.search(r"\+7\d{10}|\+380\d{9}|\+1\d{10}", message_text)
     phone = phone_m.group(0) if phone_m else None
-
     username_m = re.search(r"@[\w\u0400-\u04FF]+", message_text)
     username = username_m.group(0) if username_m else None
-
-    region_m = re.search(
-        r"(?:город|г\.?)\s+([\w\u0400-\u04FF\-]+)", message_text, re.IGNORECASE
-    )
+    region_m = re.search(r"(?:город|г\.?)\s+([\w\u0400-\u04FF\-]+)", message_text, re.IGNORECASE)
     region = region_m.group(1) if region_m else None
-
     budget_m = re.search(r"[Бб]юджет\s+([^\n]+)", message_text)
     budget = budget_m.group(1).strip() if budget_m else None
-
     return phone, username, region, budget, tags
 
 
@@ -119,14 +111,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message or not message.text:
         return
-
     text = message.text
     if TARGET_TAG.upper() not in text.upper():
         return
-
     phone, username, region, budget, tags = extract_client_data(text)
     logger.info("📋 phone=%s username=%s region=%s budget=%s", phone, username, region, budget)
-
     client_id = find_client(phone, username)
     if client_id:
         try:
@@ -139,9 +128,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_client(phone, username, region, budget, tags)
 
 
-# ─── Запуск ──────────────────────────────────────────────────────────────────
+# ─── Главная async функция ───────────────────────────────────────────────────
 
-def main():
+async def run_bot():
     init_db()
 
     if not TELEGRAM_TOKEN:
@@ -151,13 +140,20 @@ def main():
     # Health-сервер в отдельном потоке
     threading.Thread(target=run_health_server, daemon=True).start()
 
-    # Бот v21
+    # Запуск бота
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🤖 Бот запущен...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
+    async with app:
+        await app.start()
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        # держим бота живым
+        await asyncio.Event().wait()
+
+
+# ─── Точка входа ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_bot())
