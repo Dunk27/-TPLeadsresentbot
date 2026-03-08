@@ -1,15 +1,14 @@
 """
 Telegram-бот ФРАУ_КУХНИ
-Версия для Render.com + Python 3.13/3.14
-Использует python-telegram-bot v20
+Версия для Render.com + Python 3.14
+python-telegram-bot v21
 """
 import logging
 import sqlite3
 import re
 import os
-import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -17,7 +16,7 @@ from telegram.ext import Application, MessageHandler, filters, ContextTypes
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TARGET_TAG = "#ФРАУ_КУХНИ"
 DB_FILE = os.getenv("DB_FILE", "clients.db")
-PORT = int(os.getenv("PORT", 8080))
+PORT = int(os.getenv("PORT", 10000))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ─── Health check HTTP-сервер (нужен чтобы Render не убивал процесс) ─────────
+# ─── Health check (Render требует открытый порт) ──────────────────────────────
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -89,7 +88,7 @@ def find_client(phone, username, db_file=DB_FILE):
     return row[0] if row else None
 
 
-# ─── Парсинг сообщений ────────────────────────────────────────────────────────
+# ─── Парсинг ─────────────────────────────────────────────────────────────────
 
 def extract_client_data(message_text):
     if not message_text:
@@ -114,7 +113,7 @@ def extract_client_data(message_text):
     return phone, username, region, budget, tags
 
 
-# ─── Обработчик сообщений ─────────────────────────────────────────────────────
+# ─── Обработчик ──────────────────────────────────────────────────────────────
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -149,11 +148,10 @@ def main():
         logger.error("❌ Переменная TELEGRAM_TOKEN не задана!")
         return
 
-    # Health-сервер в фоне
-    t = threading.Thread(target=run_health_server, daemon=True)
-    t.start()
+    # Health-сервер в отдельном потоке
+    threading.Thread(target=run_health_server, daemon=True).start()
 
-    # Запуск бота (v20 API)
+    # Бот v21
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
