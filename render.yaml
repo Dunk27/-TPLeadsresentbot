@@ -1,12 +1,12 @@
 services:
   - type: web
-    name: fraukuhni-bot
+    name: tp-leads-bot
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: PORT
-        value: 8080
+        value: "10000"
