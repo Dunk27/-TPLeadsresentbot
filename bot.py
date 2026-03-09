@@ -14,7 +14,7 @@ import threading
 from datetime import datetime, time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import psycopg2
+import psycopg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, MessageHandler, CommandHandler,
@@ -49,7 +49,7 @@ def run_health_server():
 # ─── База данных (PostgreSQL) ─────────────────────────────────────────────────
 
 def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg.connect(DATABASE_URL)
 
 def init_db():
     with get_conn() as conn:
