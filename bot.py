@@ -24,7 +24,7 @@ from telegram.ext import (
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 ADMIN_IDS      = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-DATABASE_URL   = os.getenv("DATABASE_URL", "")
+DATABASE_URL   = os.getenv("postgresql://tp_leads_db_user:kW34clnZnhVGvzBPilu52jG3pUBVj0Ts@dpg-d6n63i95pdvs7398vffg-a/tp_leads_db", "")
 PORT           = int(os.getenv("PORT", 10000))
 DEADLINE_HOURS = 2  # часов до напоминания
 
