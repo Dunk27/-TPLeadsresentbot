@@ -18,9 +18,8 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 )
 
-TELEGRAM_TOKEN = os.getenv("8731218498:AAGBs5axqXN2fnxY-u5ATftmKCOdsp17KWI", "")
-# ID администраторов через запятую: "123456789,987654321"
-ADMIN_IDS = [int(x) for x in os.getenv("756974370", "").split(",") if x.strip()]
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 DB_FILE = os.getenv("DB_FILE", "clients.db")
 PORT = int(os.getenv("PORT", 10000))
 
