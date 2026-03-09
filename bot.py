@@ -2,8 +2,8 @@
 Telegram-бот ФРАУ_КУХНИ
 - Webhook режим (один процесс, нет конфликтов)
 - Пересылает заявки с тегами заказчикам в личку
-- Кнопки Принял / Отклонил / Комментарий
-- Дедлайн 2 часа — напоминание заказчику и уведомление админу
+- Кнопки "Принял / Отклонил / Комментарий"
+- Дедлайн 2 часа — напоминание и уведомление админу
 - Еженедельный отчёт
 - Render.com + Python 3.14 + python-telegram-bot v21 + PostgreSQL
 """
@@ -90,7 +90,8 @@ def get_all_routes():
 def get_route_by_tag(tag):
     with get_conn() as conn:
         return conn.execute(
-            "SELECT customer_id, customer_name FROM routes WHERE tag = %s", (tag.upper(),)
+            "SELECT customer_id, customer_name FROM routes WHERE tag = %s",
+            (tag.upper(),)
         ).fetchone()
 
 def add_route(tag, customer_id, customer_name):
@@ -182,7 +183,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tags = re.findall(r"#[\w\u0400-\u04FF]+", text)
     if not tags:
         return
-
     manager_chat_id = message.chat_id
     for tag in tags:
         route = get_route_by_tag(tag)
@@ -216,11 +216,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             error = str(e)
             log_forward(tag, customer_id, text, delivered=False, error_text=error)
+            logger.error("❌ Ошибка [%s] → %s: %s", tag, customer_id, error)
             for admin_id in ADMIN_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=admin_id,
-                        text=f"🔔 <b>Заявка НЕ доставлена!</b>\n\nТег: <code>{tag}</code>\nЗаказчик: {customer_name}\nПричина: <code>{error}</code>\n\n{text[:300]}",
+                        text=f"🔔 <b>Заявка НЕ доставлена!</b>\n\nТег: <code>{tag}</code>\nЗаказчик: {customer_name} (<code>{customer_id}</code>)\nПричина: <code>{error}</code>\n\n📝 {text[:300]}",
                         parse_mode="HTML"
                     )
                 except: pass
@@ -230,18 +231,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def lead_accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("✅ Статус обновлён")
+    await query.answer("✅ Принято!")
     lead_id = int(query.data.split("_")[2])
     lead = get_lead(lead_id)
     if not lead: return
     update_lead_status(lead_id, "accepted")
     await query.edit_message_text(
-        query.message.text + "\n\n✅ <b>Вы приняли эту заявку</b>", parse_mode="HTML"
+        query.message.text + "\n\n✅ <b>Вы приняли эту заявку</b>",
+        parse_mode="HTML"
     )
     try:
         await context.bot.send_message(
             chat_id=lead[2],
-            text=f"✅ <b>Заявка принята!</b>\n\nТег: <code>{lead[1]}</code>\nЗаказчик: {lead[4]}\n\n{lead[5][:300]}",
+            text=f"✅ <b>Заявка принята!</b>\n\nТег: <code>{lead[1]}</code>\nЗаказчик: {lead[4]}\n\n📝 {lead[5][:300]}",
             parse_mode="HTML"
         )
     except Exception as e:
@@ -249,18 +251,19 @@ async def lead_accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def lead_decline(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("❌ Статус обновлён")
+    await query.answer("❌ Отклонено")
     lead_id = int(query.data.split("_")[2])
     lead = get_lead(lead_id)
     if not lead: return
     update_lead_status(lead_id, "declined")
     await query.edit_message_text(
-        query.message.text + "\n\n❌ <b>Вы отклонили эту заявку</b>", parse_mode="HTML"
+        query.message.text + "\n\n❌ <b>Вы отклонили эту заявку</b>",
+        parse_mode="HTML"
     )
     try:
         await context.bot.send_message(
             chat_id=lead[2],
-            text=f"❌ <b>Заявка отклонена!</b>\n\nТег: <code>{lead[1]}</code>\nЗаказчик: {lead[4]}\n\n{lead[5][:300]}",
+            text=f"❌ <b>Заявка отклонена!</b>\n\nТег: <code>{lead[1]}</code>\nЗаказчик: {lead[4]}\n\n📝 {lead[5][:300]}",
             parse_mode="HTML"
         )
     except Exception as e:
@@ -273,7 +276,7 @@ async def lead_comment_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["comment_lead_id"] = lead_id
     await context.bot.send_message(
         chat_id=query.from_user.id,
-        text="💬 Напишите комментарий к заявке — он будет отправлен менеджеру:"
+        text="💬 Напишите ваш комментарий к заявке — он будет отправлен менеджеру:"
     )
     return WAIT_COMMENT
 
@@ -293,18 +296,20 @@ async def lead_comment_receive(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("✅ Комментарий отправлен менеджеру!")
     except Exception as e:
         await update.message.reply_text("⚠️ Не удалось отправить комментарий.")
+        logger.error("Ошибка комментария: %s", e)
     return ConversationHandler.END
 
 
 # ─── Дедлайн ─────────────────────────────────────────────────────────────────
 
 async def check_deadlines(context: ContextTypes.DEFAULT_TYPE):
-    for lead in get_pending_leads_overdue():
+    overdue = get_pending_leads_overdue()
+    for lead in overdue:
         lead_id, tag, manager_chat_id, customer_id, customer_name, message = lead
         try:
             await context.bot.send_message(
                 chat_id=customer_id,
-                text=f"⏰ <b>Напоминание!</b>\n\nВы не ответили на заявку по тегу <code>{tag}</code>.\n\n{message[:300]}",
+                text=f"⏰ <b>Напоминание!</b>\n\nВы не ответили на заявку по тегу <code>{tag}</code>.\n\n📝 {message[:300]}",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("✅ Принял",      callback_data=f"lead_accept_{lead_id}"),
                     InlineKeyboardButton("❌ Отклонил",    callback_data=f"lead_decline_{lead_id}"),
@@ -318,7 +323,7 @@ async def check_deadlines(context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=admin_id,
-                    text=f"⏰ <b>Заявка не обработана {DEADLINE_HOURS} ч!</b>\n\nТег: <code>{tag}</code>\nЗаказчик: {customer_name} (<code>{customer_id}</code>)\n\n{message[:300]}",
+                    text=f"⏰ <b>Заявка не обработана {DEADLINE_HOURS}ч!</b>\n\nТег: <code>{tag}</code>\nЗаказчик: {customer_name} (<code>{customer_id}</code>)\n\n📝 {message[:300]}",
                     parse_mode="HTML"
                 )
             except: pass
@@ -331,7 +336,7 @@ async def send_weekly_report(context: ContextTypes.DEFAULT_TYPE):
     total_row, by_tag, by_status = get_weekly_stats()
     ok, fail, total = total_row
     status_map = {"pending": "⏳ Ожидают", "accepted": "✅ Приняты", "declined": "❌ Отклонены"}
-    text = f"📊 <b>Еженедельный отчёт</b>\n\n📨 Всего: <b>{total}</b>\n✅ Доставлено: <b>{ok}</b>\n❌ Не доставлено: <b>{fail}</b>\n"
+    text = f"📊 <b>Еженедельный отчёт</b>\nЗа последние 7 дней:\n\n📨 Всего: <b>{total}</b>\n✅ Доставлено: <b>{ok}</b>\n❌ Не доставлено: <b>{fail}</b>\n"
     if by_status:
         text += "\n📋 <b>По статусам:</b>\n"
         for status, cnt in by_status:
@@ -365,16 +370,22 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await send_weekly_report(context)
 
-async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Нет доступа.")
-        return
-    await show_admin_menu(update, context)
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Отменено.")
+    await show_admin_menu_msg(update, context)
+    return ConversationHandler.END
 
 
 # ─── Админ-панель ─────────────────────────────────────────────────────────────
 
-async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def admin_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Добавить маршрут", callback_data="admin_add")],
+        [InlineKeyboardButton("🗑 Удалить маршрут",  callback_data="admin_delete")],
+        [InlineKeyboardButton("📊 Отчёт за неделю",  callback_data="admin_stats")],
+    ])
+
+def admin_text():
     routes = get_all_routes()
     text = "⚙️ <b>Админ-панель</b>\n\n"
     if routes:
@@ -383,15 +394,22 @@ async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"  • {tag} → {cname} (<code>{cid}</code>)\n"
     else:
         text += "📋 Маршруты пока не настроены.\n"
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Добавить маршрут", callback_data="admin_add")],
-        [InlineKeyboardButton("🗑 Удалить маршрут",  callback_data="admin_delete")],
-        [InlineKeyboardButton("📊 Отчёт за неделю",  callback_data="admin_stats")],
-    ])
+    return text
+
+async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await update.callback_query.edit_message_text(admin_text(), reply_markup=admin_keyboard(), parse_mode="HTML")
     else:
-        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await update.message.reply_text(admin_text(), reply_markup=admin_keyboard(), parse_mode="HTML")
+
+async def show_admin_menu_msg(update, context):
+    await update.message.reply_text(admin_text(), reply_markup=admin_keyboard(), parse_mode="HTML")
+
+async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    await show_admin_menu(update, context)
 
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -421,7 +439,7 @@ async def admin_add_customer_id(update: Update, context: ContextTypes.DEFAULT_TY
         return WAIT_CUSTOMER_ID
     context.user_data["new_customer_id"] = cid
     await update.message.reply_text(
-        f"✅ ID: <code>{cid}</code>\n\nШаг 3/3: Введите имя заказчика",
+        f"✅ ID: <code>{cid}</code>\n\nШаг 3/3: Введите имя заказчика (например: <i>Иван Петров</i>)",
         parse_mode="HTML"
     )
     return WAIT_CUSTOMER_NAME
@@ -438,26 +456,6 @@ async def admin_add_customer_name(update: Update, context: ContextTypes.DEFAULT_
     await show_admin_menu_msg(update, context)
     return ConversationHandler.END
 
-async def show_admin_menu_msg(update, context):
-    routes = get_all_routes()
-    text = "⚙️ <b>Админ-панель</b>\n\n"
-    if routes:
-        text += "📋 <b>Текущие маршруты:</b>\n"
-        for rid, tag, cid, cname in routes:
-            text += f"  • {tag} → {cname} (<code>{cid}</code>)\n"
-    else:
-        text += "📋 Маршруты пока не настроены.\n"
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Добавить маршрут", callback_data="admin_add")],
-        [InlineKeyboardButton("🗑 Удалить маршрут",  callback_data="admin_delete")],
-        [InlineKeyboardButton("📊 Отчёт за неделю",  callback_data="admin_stats")],
-    ]), parse_mode="HTML")
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Отменено.")
-    await show_admin_menu_msg(update, context)
-    return ConversationHandler.END
-
 async def admin_delete_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -471,8 +469,7 @@ async def admin_delete_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
          for rid, tag, cid, cname in routes] +
         [[InlineKeyboardButton("« Назад", callback_data="admin_back")]]
     )
-    await query.edit_message_text("🗑 <b>Выберите маршрут для удаления:</b>",
-                                   reply_markup=keyboard, parse_mode="HTML")
+    await query.edit_message_text("🗑 <b>Выберите маршрут для удаления:</b>", reply_markup=keyboard, parse_mode="HTML")
 
 async def admin_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -487,10 +484,8 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if not is_admin(query.from_user.id): return
     await send_weekly_report(context)
-    await query.edit_message_text(
-        "📊 Отчёт отправлен вам в чат.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Назад", callback_data="admin_back")]])
-    )
+    await query.edit_message_text("📊 Отчёт отправлен вам в чат.",
+                                   reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Назад", callback_data="admin_back")]]))
 
 
 # ─── Запуск через Webhook ─────────────────────────────────────────────────────
@@ -508,11 +503,11 @@ async def run_bot():
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Проверка дедлайнов каждые 30 минут
+    # Задания по расписанию
     app.job_queue.run_repeating(check_deadlines, interval=1800, first=60)
-    # Еженедельный отчёт — понедельник 09:00
     app.job_queue.run_daily(send_weekly_report, time=time(9, 0), days=(0,))
 
+    # ConversationHandler для маршрутов
     route_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_add_start, pattern="^admin_add$")],
         states={
@@ -522,6 +517,8 @@ async def run_bot():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
+    # ConversationHandler для комментариев
     comment_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(lead_comment_start, pattern=r"^lead_comment_\d+$")],
         states={
@@ -550,14 +547,19 @@ async def run_bot():
     logger.info("🤖 Запуск через webhook: %s", full_webhook_url)
 
     async with app:
-        await app.bot.delete_webhook(drop_pending_updates=True)
         await app.start()
+        await app.bot.set_webhook(
+            url=full_webhook_url,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
         await app.updater.start_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path=webhook_path,
             webhook_url=full_webhook_url,
         )
+        logger.info("✅ Webhook запущен на порту %s", PORT)
         await asyncio.Event().wait()
 
 
