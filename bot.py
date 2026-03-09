@@ -313,7 +313,7 @@ async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "➕ <b>Добавление маршрута</b>\n\n"
         "Шаг 1/3: Введите тег (например: <code>#ФРАУ_КУХНИ</code>)\n\n"
-        "Или /отмена для выхода",
+        "Или /cancel для выхода",
         parse_mode="HTML"
     )
     return WAIT_TAG
@@ -463,7 +463,7 @@ async def run_bot():
             WAIT_CUSTOMER_ID:   [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_customer_id)],
             WAIT_CUSTOMER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_customer_name)],
         },
-        fallbacks=[CommandHandler("отмена", cancel)],
+        fallbacks=[CommandHandler("cancel", cancel)],
     )
 
     app.add_handler(CommandHandler("start",  cmd_start))
