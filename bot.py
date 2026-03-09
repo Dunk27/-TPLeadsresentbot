@@ -671,8 +671,14 @@ async def run_bot():
 
     logger.info("🤖 Бот запущен...")
     async with app:
+        # Сбрасываем все предыдущие соединения перед стартом
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        await asyncio.sleep(2)
         await app.start()
-        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await app.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
         await asyncio.Event().wait()
 
 
