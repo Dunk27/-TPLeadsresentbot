@@ -516,6 +516,9 @@ async def run_bot():
             WAIT_CUSTOMER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_customer_name)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+        per_chat=True,
+        per_user=True,
     )
 
     # ConversationHandler для комментариев
@@ -525,6 +528,9 @@ async def run_bot():
             WAIT_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, lead_comment_receive)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+        per_chat=True,
+        per_user=True,
     )
 
     app.add_handler(CommandHandler("start",  cmd_start))
